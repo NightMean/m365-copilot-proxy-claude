@@ -47,6 +47,33 @@ function Test-ProxyHealth {
     } catch { return $false }
 }
 
+# Iterative (non-recursive-call) directory walk that never descends into
+# node_modules/dist/.output. Get-ChildItem -Recurse has to stat every file
+# before the caller can filter it out, and pnpm's per-package node_modules is
+# a symlink farm into the shared store containing tens of thousands of files
+# plus paths that exceed Windows' 260-char MAX_PATH once nested under this
+# repo's full path -- so a naive recursive scan is both extremely slow and
+# occasionally throws. Skipping those directory names during the walk itself
+# avoids both problems instead of filtering the (already expensive) results.
+function Get-WorkspaceSourceFiles([string[]]$Paths) {
+    $skipDirs = @('node_modules', 'dist', '.output')
+    $stack = [System.Collections.Generic.Stack[string]]::new()
+    foreach ($p in $Paths) {
+        if (Test-Path -LiteralPath $p -PathType Leaf) { Get-Item -LiteralPath $p }
+        elseif (Test-Path -LiteralPath $p -PathType Container) { $stack.Push($p) }
+    }
+    while ($stack.Count -gt 0) {
+        $dir = $stack.Pop()
+        foreach ($entry in (Get-ChildItem -LiteralPath $dir -Force -ErrorAction SilentlyContinue)) {
+            if ($entry.PSIsContainer) {
+                if ($skipDirs -notcontains $entry.Name) { $stack.Push($entry.FullName) }
+            } else {
+                $entry
+            }
+        }
+    }
+}
+
 if (-not (Get-Command node -ErrorAction SilentlyContinue)) { Fail "Node.js is required. Install Node.js LTS and rerun." }
 if (-not (Get-Command npm -ErrorAction SilentlyContinue)) { Fail "npm is required but was not found beside Node.js." }
 New-Item -ItemType Directory -Force -Path $configDir, $stateDir | Out-Null
@@ -98,8 +125,8 @@ $serverEntry = Join-Path $Root "packages\proxy\.output\server\index.mjs"
 $buildNeeded = $Fresh -or -not (Test-Path -LiteralPath $serverEntry)
 if (-not $buildNeeded) {
     $builtAt = (Get-Item -LiteralPath $serverEntry).LastWriteTimeUtc
-    $newerSource = Get-ChildItem -Path (Join-Path $Root "packages"), (Join-Path $Root "package.json"), (Join-Path $Root "pnpm-lock.yaml") -Recurse -File |
-        Where-Object { $_.FullName -notmatch '[\\/]node_modules[\\/]|[\\/]dist[\\/]|[\\/]\.output[\\/]' -and $_.LastWriteTimeUtc -gt $builtAt } |
+    $newerSource = Get-WorkspaceSourceFiles @((Join-Path $Root "packages"), (Join-Path $Root "package.json"), (Join-Path $Root "pnpm-lock.yaml")) |
+        Where-Object { $_.LastWriteTimeUtc -gt $builtAt } |
         Select-Object -First 1
     $buildNeeded = $null -ne $newerSource
 }
