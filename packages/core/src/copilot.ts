@@ -186,11 +186,14 @@ export const MODEL_ALIASES: Record<string, string> = {
   // Claude aliases
   claude: "claude-sonnet",
   "claude-sonnet-4.5": "claude-sonnet",
+  "claude-sonnet-4.6": "claude-sonnet",
+  "claude-sonnet-4-6": "claude-sonnet",
+  "sonnet-4-6": "claude-sonnet",
   "claude-3-7-sonnet": "claude-sonnet",
   "claude-3-5-sonnet": "claude-sonnet",
   "claude-sonnet-5": "claude-sonnet",
   "claude-sonnet-5[1m]": "claude-sonnet",
-  sonnet: "claude-sonnet",
+  "sonnet": "claude-sonnet",
   "sonnet-5": "claude-sonnet",
   "sonnet-4": "claude-sonnet",
   "claude-sonnet-5-20251219": "claude-sonnet",
@@ -198,12 +201,27 @@ export const MODEL_ALIASES: Record<string, string> = {
   "claude-3-5-sonnet-20241022": "claude-sonnet",
   "claude-3-5-sonnet-20240620": "claude-sonnet",
 
+  // Regional Anthropic prefixes allowed by corporate / Bedrock policies
+  "eu.anthropic.claude-sonnet-5": "claude-sonnet",
+  "eu.anthropic.claude-sonnet-4-6": "claude-sonnet",
+  "eu.anthropic.claude-sonnet-4.6": "claude-sonnet",
+  "us.anthropic.claude-sonnet-5": "claude-sonnet",
+  "us.anthropic.claude-sonnet-4-6": "claude-sonnet",
+
   "claude-sonnet-5-thinking": "claude-sonnet-think-deeper",
   "claude-sonnet-5-20251219-thinking": "claude-sonnet-think-deeper",
   "claude-3-7-sonnet-thinking": "claude-sonnet-think-deeper",
 
   "claude-opus-4": "claude-opus",
   "claude-opus-4-5": "claude-opus",
+  "claude-opus-4-6": "gpt-5.5-think-deeper",
+  "claude-opus-4.6": "gpt-5.5-think-deeper",
+  "opus-4-6": "gpt-5.5-think-deeper",
+  "opus-4.6": "gpt-5.5-think-deeper",
+  "claude-opus-4-7": "claude-opus",
+  "claude-opus-4.7": "claude-opus",
+  "claude-opus-4-8": "claude-opus",
+  "claude-opus-4.8": "claude-opus",
   "claude-opus-4-20250514": "claude-opus",
   "opus-4": "claude-opus",
   "claude-opus-4-5-20250514": "claude-opus",
@@ -213,6 +231,15 @@ export const MODEL_ALIASES: Record<string, string> = {
   "claude-opus-5": "claude-opus",
   "claude-opus-5[1m]": "claude-opus",
   "opus[1m]": "claude-opus",
+
+  // Regional Anthropic Opus aliases allowed by corporate / Bedrock policies
+  "eu.anthropic.claude-opus-4-8": "claude-opus",
+  "eu.anthropic.claude-opus-4-7": "claude-opus",
+  "eu.anthropic.claude-opus-5": "claude-opus",
+  "eu.anthropic.claude-opus-4-6": "gpt-5.5-think-deeper",
+  "eu.anthropic.claude-opus-4.6": "gpt-5.5-think-deeper",
+  "us.anthropic.claude-opus-4-8": "claude-opus",
+  "us.anthropic.claude-opus-5": "claude-opus",
 
   // Haiku aliases (map to claude-sonnet with warning)
   haiku: "claude-sonnet",

@@ -35,6 +35,16 @@ describe("Model Registry", () => {
     expect(resolveModelStrict("opus").m365Tone).toBe("Claude_Opus");
     expect(resolveModelStrict("opus-5").m365Tone).toBe("Claude_Opus");
     expect(resolveModelStrict("claude-3-opus").m365Tone).toBe("Claude_Opus");
+    expect(resolveModelStrict("claude-opus-4.8").m365Tone).toBe("Claude_Opus");
+
+    // Enterprise policy spoof: opus-4.6 explicitly aliases GPT-5.5 Reasoning
+    expect(resolveModelStrict("claude-opus-4.6").m365Tone).toBe("Gpt_5_5_Reasoning");
+    expect(resolveModelStrict("opus-4.6").m365Tone).toBe("Gpt_5_5_Reasoning");
+    expect(resolveModelStrict("eu.anthropic.claude-opus-4.6").m365Tone).toBe("Gpt_5_5_Reasoning");
+
+    // Enterprise Sonnet aliases resolve to Claude_Sonnet
+    expect(resolveModelStrict("claude-sonnet-4.6").m365Tone).toBe("Claude_Sonnet");
+    expect(resolveModelStrict("eu.anthropic.claude-sonnet-5").m365Tone).toBe("Claude_Sonnet");
   });
 
   it("is case-insensitive and trims whitespace", () => {

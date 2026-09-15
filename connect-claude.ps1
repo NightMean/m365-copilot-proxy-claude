@@ -1,6 +1,6 @@
 [CmdletBinding()]
 param(
-    [string]$Model = "gpt-5.5",
+    [string]$Model = "claude-opus-4.6",
     [string]$SessionId,
     [switch]$Unsafe,
     [switch]$NewSession,

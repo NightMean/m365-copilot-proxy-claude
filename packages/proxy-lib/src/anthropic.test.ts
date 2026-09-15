@@ -62,6 +62,10 @@ describe("Anthropic Messages compatibility", () => {
     expect(resolveM365Model("claude-opus-5")).toBe("claude-opus");
     expect(resolveM365Model("opus[1m]")).toBe("claude-opus");
     expect(resolveM365Model("gpt-5.5-think-deeper")).toBe("gpt-5.5-think-deeper");
+    expect(resolveM365Model("claude-opus-4.6")).toBe("gpt-5.5-think-deeper");
+    expect(resolveM365Model("eu.anthropic.claude-opus-4.6")).toBe("gpt-5.5-think-deeper");
+    expect(resolveM365Model("claude-sonnet-4.6")).toBe("claude-sonnet");
+    expect(resolveM365Model("eu.anthropic.claude-sonnet-5")).toBe("claude-sonnet");
   });
 
   it("warns (does not silently substitute) when a Haiku alias resolves to a different canonical model", () => {
