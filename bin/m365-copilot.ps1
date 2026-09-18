@@ -176,11 +176,11 @@ switch ($Command) {
     }
 
     "login" {
-        & (Join-Path $Root "login.ps1") @RemainingArgs
+        & node (Join-Path $Root "scripts\auth-interactive.mjs") @RemainingArgs
     }
 
     "login-device" {
-        & (Join-Path $Root "login-device.ps1") @RemainingArgs
+        & node (Join-Path $Root "scripts\auth-device.mjs") @RemainingArgs
     }
 
     "start" {

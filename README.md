@@ -194,61 +194,43 @@ versions from `pnpm-lock.yaml`.
 
 ### Fast path
 
-Clone the private repository or download and extract its archive, then run:
+Clone the repository, then run:
 
 ```bash
-git clone https://github.com/Arkedia-develipment/m365-copilot-proxy.git
+git clone https://github.com/m365-copilot-proxy/m365-copilot-proxy.git
 cd m365-copilot-proxy
 
-./install.sh
-./login.sh
-./start-proxy.sh
-./connect-claude.sh
+./bin/m365-copilot login
+./bin/m365-copilot start
+./bin/m365-copilot connect-claude
 claude
 ```
 
-If an extracted archive lost executable permissions, use `bash install.sh`,
-`bash login.sh`, and so on. Installation also adds the `m365-copilot` command under
-`~/.local/bin`.
-
-### Included executable files
-
-| File | Purpose |
-|---|---|
-| `install.sh` | Install the private runtime, locked dependencies, build, and command |
-| `login.sh` | Open the safe interactive Microsoft login |
-| `login-device-code.sh` | Try Microsoft's device-code login on another trusted device |
-| `start-proxy.sh` | Start the proxy in the background and verify its health |
-| `stop-proxy.sh` | Stop only the proxy process managed by this installation |
-| `proxy-status.sh` | Show proxy health, PID, configuration, log, and Claude mode |
-| `connect-claude.sh` | Make plain `claude` use M365; preserve the original executable |
-| `disconnect-claude.sh` | Restore normal Anthropic Claude exactly |
-| `doctor.sh` | Diagnose dependencies, login state, proxy health, and Claude mode |
-| `uninstall.sh` | Remove launchers while preserving login data by default |
-
-Every action is also available through one command:
+Every action is available through the unified CLI:
 
 ```bash
 m365-copilot help
 m365-copilot login
+m365-copilot login-device
 m365-copilot start
 m365-copilot status
 m365-copilot models
-m365-copilot logs --follow
+m365-copilot logs
 m365-copilot connect-claude
 m365-copilot disconnect-claude
+m365-copilot stop
 ```
 
 ### Sign in safely
 
-`login.sh` opens a visible Microsoft browser. Enter the address, password, and MFA only
+`m365-copilot login` opens a visible Microsoft browser. Enter the address, password, and MFA only
 on Microsoft's page. The proxy captures a short-lived OAuth authorization code and stores
 an MSAL refresh cache at `~/.config/opencode-m365/msal-cache.json`; it never requests or
 stores the password or MFA seed.
 
-If interactive login is unavailable, `login-device-code.sh` prints Microsoft's URL and a
+If interactive login is unavailable, `m365-copilot login-device` prints Microsoft's URL and a
 short-lived code. Do not paste that code into chat or store it in a file. Error `53003`
-means the university's Conditional Access policy rejected that device, platform, or auth
+means the Conditional Access policy rejected that device, platform, or auth
 flow. The launcher cannot bypass it; use the interactive browser flow or ask the tenant
 administrator.
 
