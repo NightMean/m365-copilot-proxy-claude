@@ -1,5 +1,5 @@
 import { describe, it, expect } from "vitest";
-import { foldStreamText } from "./session.js";
+import { foldStreamText, CopilotSession } from "./session.js";
 import { MessageUpdate } from "./schemas.js";
 
 /** Replay a sequence of raw M365 frames (deltas as {d}, snapshots as {s}) through
@@ -109,5 +109,19 @@ describe("GraphicArt image frame parsing (§14)", () => {
     expect(parsed.success).toBe(true);
     const m = parsed.data!.messages[0] as any;
     expect(m.contentGenerationProgressList).toBeUndefined();
+  });
+});
+
+describe("CopilotSession grounding and private chat options", () => {
+  it("defaults to grounding=web and disableMemory=true", () => {
+    const session = new CopilotSession();
+    expect((session as any).grounding).toBe("web");
+    expect((session as any).disableMemory).toBe(true);
+  });
+
+  it("respects custom grounding and disableMemory settings", () => {
+    const session = new CopilotSession({ grounding: "work", disableMemory: false });
+    expect((session as any).grounding).toBe("work");
+    expect((session as any).disableMemory).toBe(false);
   });
 });

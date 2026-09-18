@@ -1,9 +1,19 @@
 import { z } from "zod/v4";
-import { getAvailableModels, resolveModel } from "@m365-copilot/core";
+import {
+  getAvailableModels,
+  resolveModel,
+  getModelDefinition,
+  extractAnthropicImages,
+  uploadImageToSubstrate,
+  getToken,
+  type InputImage,
+  type UploadedImageAnnotation,
+  type ModelDefinition,
+  createLogger,
+} from "@m365-copilot/core";
 import { ChatCompletionRequest } from "./schemas.js";
 import { handleChatCompletion, produceCompletion, outputFinishReason, type SessionPool } from "./handler.js";
 import { upstreamEnabled, handleUpstreamMessages } from "./upstream.js";
-import { createLogger } from "@m365-copilot/core";
 
 const log = createLogger("anthropic");
 
@@ -26,8 +36,17 @@ const ToolResultBlock = z.object({
   is_error: z.boolean().optional(),
 }).passthrough();
 
+const ImageBlock = z.object({
+  type: z.literal("image"),
+  source: z.object({
+    type: z.literal("base64"),
+    media_type: z.string(),
+    data: z.string(),
+  }).passthrough(),
+}).passthrough();
+
 const IgnoredBlock = z.object({ type: z.string() }).passthrough();
-const ContentBlock = z.union([TextBlock, ToolUseBlock, ToolResultBlock, IgnoredBlock]);
+const ContentBlock = z.union([TextBlock, ToolUseBlock, ToolResultBlock, ImageBlock, IgnoredBlock]);
 
 const AnthropicMessage = z.object({
   // Accept 'system' role in the messages array — some clients (Cursor, older Claude Code)
@@ -441,7 +460,15 @@ function anthropicErrorFromPayload(
   const mappedStatus = nonRetryable ? 400 : status;
   const type = nonRetryable
     ? "invalid_request_error"
-    : status === 429 ? "rate_limit_error" : "api_error";
+    : status === 401
+      ? "authentication_error"
+      : status === 403
+        ? "permission_error"
+        : status === 404
+          ? "not_found_error"
+          : status === 429
+            ? "rate_limit_error"
+            : "api_error";
   return anthropicError(mappedStatus, message, type, payload?.code);
 }
 
@@ -529,6 +556,59 @@ function applyStopSequences(text: string, sequences: string[] | undefined): {
     : { text, stopReason: "end_turn", stopSequence: null };
 }
 
+export function extractImagesFromAnthropicBody(body: AnthropicBody): InputImage[] {
+  const images: InputImage[] = [];
+  for (const msg of body.messages) {
+    if (msg.role === "user" && Array.isArray(msg.content)) {
+      images.push(...extractAnthropicImages(msg.content));
+    }
+  }
+  return images;
+}
+
+async function resolveImageAnnotations(
+  body: AnthropicBody,
+  sessionKey?: string,
+): Promise<UploadedImageAnnotation[] | undefined> {
+  const images = extractImagesFromAnthropicBody(body);
+  if (images.length === 0) return undefined;
+
+  let modelDef: ModelDefinition | undefined;
+  try {
+    modelDef = getModelDefinition(body.model);
+  } catch {
+    // ignore
+  }
+
+  if (modelDef && !modelDef.supportsVision) {
+    log.warn(`Model ${body.model} does not support vision input; image attachments may not be interpreted`);
+    return undefined;
+  }
+
+  try {
+    if (process.env.M365_FAKE_MODE === "1" || process.env.NODE_ENV === "test") {
+      return images.map((img, i) => ({
+        id: `doc_mock_vision_${i + 1}`,
+        messageAnnotationMetadata: {
+          "@type": "File" as const,
+          annotationType: "File" as const,
+          fileType: img.mediaType,
+          fileName: img.fileName ?? `image_${i + 1}.png`,
+        },
+        messageAnnotationType: "ImageFile" as const,
+      }));
+    }
+
+    const token = await getToken();
+    return await Promise.all(
+      images.map((img) => uploadImageToSubstrate(token, sessionKey ?? crypto.randomUUID(), img)),
+    );
+  } catch (err: any) {
+    log.error("Failed to upload image annotations to Substrate:", err?.message ?? err);
+    return undefined;
+  }
+}
+
 /**
  * Run one Anthropic Messages turn through the shared produceCompletion engine and
  * translate the result back into Anthropic wire shapes. Protocol-neutral errors
@@ -539,6 +619,7 @@ async function completeAnthropic(
   pool: SessionPool,
   opts: HandleAnthropicOptions,
 ): Promise<{ message: AnthropicMessageResponse } | { error: Response }> {
+  const imageAnnotations = await resolveImageAnnotations(body, opts.sessionKey);
   const chat = toOpenAIChatRequest(body);
   const { produced, usage } = await produceCompletion(chat, pool, {
     signal: opts.signal,
@@ -546,6 +627,7 @@ async function completeAnthropic(
     sessionKey: opts.sessionKey,
     profile: opts.profile,
     forceSingleToolUse: requestsSingleToolUse(body),
+    imageAnnotations,
   });
   if (produced.kind === "error") return { error: produced.resp };
 
@@ -706,6 +788,7 @@ export async function handleAnthropicMessages(
           },
         });
 
+        const imageAnnotations = await resolveImageAnnotations(body, options.sessionKey);
         const chat = toOpenAIChatRequest(body);
         const { produced, usage } = await produceCompletion(chat, pool, {
           signal: options.signal,
@@ -716,6 +799,7 @@ export async function handleAnthropicMessages(
           sessionKey: options.sessionKey,
           profile: options.profile,
           forceSingleToolUse: requestsSingleToolUse(body),
+          imageAnnotations,
           // Live passthrough: every upstream delta becomes a text_delta AS IT ARRIVES.
           onTextDelta: body.stop_sequences?.length ? undefined : (delta) => {
             if (!delta) return;

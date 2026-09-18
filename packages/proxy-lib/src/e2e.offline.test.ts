@@ -12,6 +12,9 @@ import { SessionPool, produceCompletion } from "./handler.js";
 import { AnthropicMessagesRequest, toOpenAIChatRequest } from "./anthropic.js";
 import { CANONICAL_MODELS } from "@m365-copilot/core";
 
+process.env.M365_NO_BACKOFF = "1";
+process.env.M365_CONVERSATION_START_GAP_MS = "0";
+
 /**
  * OFFLINE end-to-end suite: drives the full protocol stack (Anthropic Messages
  * translation -> produceCompletion -> fenced tool parsing -> FakeTransport)
@@ -1023,3 +1026,185 @@ describe("cancellation propagation (abort before start + mid-turn)", () => {
     expect(transport.calls).toBe(2);
   });
 });
+
+describe("12 Protocol Test Fixtures Suite (/v1/messages)", () => {
+  beforeAll(() => {
+    process.env.M365_CONVERSATION_START_GAP_MS = "0";
+    process.env.M365_NO_BACKOFF = "1";
+  });
+
+  function makeFixtureApp(fixture: any, opts?: any) {
+    const transport = new FakeTransport({ fixture, ...opts });
+    const app = createApp({
+      getToken: async () => "fake-token",
+      useAgent: false,
+      transport,
+    });
+    return { app, transport };
+  }
+
+  it("fixture 1: normal-text generates complete assistant message", async () => {
+    const { app } = makeFixtureApp("normal-text");
+    const res = await app.fetch(
+      anthropicRequest({
+        model: "claude-sonnet",
+        messages: [{ role: "user", content: "hello" }],
+      }),
+    );
+    expect(res.status).toBe(200);
+    const body = await res.json();
+    expect(body.role).toBe("assistant");
+    expect(body.content[0].type).toBe("text");
+    expect(body.stop_reason).toBe("end_turn");
+  });
+
+  it("fixture 2: streamed-text streams chunks over SSE", async () => {
+    const { app } = makeFixtureApp("streamed-text");
+    const res = await app.fetch(
+      anthropicRequest({
+        model: "claude-sonnet",
+        stream: true,
+        messages: [{ role: "user", content: "hello stream" }],
+      }),
+    );
+    expect(res.status).toBe(200);
+    const text = await res.text();
+    expect(text).toContain("event: message_start");
+    expect(text).toContain("content_block_delta");
+    expect(text).toContain("event: message_stop");
+  });
+
+  it("fixture 3: tool-call produces valid Anthropic tool_use block", async () => {
+    const { app } = makeFixtureApp("tool-call");
+    const res = await app.fetch(
+      anthropicRequest({
+        model: "claude-sonnet",
+        tools: [BASH_TOOL],
+        messages: [{ role: "user", content: "run command" }],
+      }),
+    );
+    expect(res.status).toBe(200);
+    const body = await res.json();
+    expect(body.stop_reason).toBe("tool_use");
+    expect(body.content.some((c: any) => c.type === "tool_use")).toBe(true);
+  });
+
+  it("fixture 4: multi-tool produces multiple tool_use blocks in one turn", async () => {
+    const { app } = makeFixtureApp("multi-tool");
+    const res = await app.fetch(
+      anthropicRequest({
+        model: "claude-sonnet",
+        tools: [BASH_TOOL],
+        messages: [{ role: "user", content: "run steps" }],
+      }),
+    );
+    expect(res.status).toBe(200);
+    const body = await res.json();
+    expect(body.stop_reason).toBe("tool_use");
+    const toolUses = body.content.filter((c: any) => c.type === "tool_use");
+    expect(toolUses.length).toBeGreaterThanOrEqual(2);
+  });
+
+  it("fixture 5: malformed-tool handles syntax errors safely", async () => {
+    const { app } = makeFixtureApp("malformed-tool");
+    const res = await app.fetch(
+      anthropicRequest({
+        model: "claude-sonnet",
+        tools: [{ name: "read_file", input_schema: { type: "object", properties: { path: { type: "string" } } } }],
+        messages: [{ role: "user", content: "read file" }],
+      }),
+    );
+    expect(res.status).toBe(200);
+    const body = await res.json();
+    expect(body.role).toBe("assistant");
+  });
+
+  it("fixture 6: confabulated-prose triggers retry or surfaces prose fallback", async () => {
+    const { app } = makeFixtureApp("confabulated-prose");
+    const res = await app.fetch(
+      anthropicRequest({
+        model: "claude-sonnet",
+        tools: [BASH_TOOL],
+        messages: [{ role: "user", content: "please edit this file" }],
+      }),
+    );
+    expect(res.status).toBe(200);
+    const body = await res.json();
+    expect(body.role).toBe("assistant");
+    expect(body.content[0].type).toBe("text");
+  });
+
+  it("fixture 7: disengaged returns graceful assistant turn", async () => {
+    const { app } = makeFixtureApp("disengaged");
+    const res = await app.fetch(
+      anthropicRequest({
+        model: "claude-sonnet",
+        messages: [{ role: "user", content: "trigger disengage" }],
+      }),
+    );
+    expect(res.status).toBe(200);
+    const body = await res.json();
+    expect(body.role).toBe("assistant");
+    expect(body.content[0].text).toMatch(/safety filter|content filter|declined this request/);
+  });
+
+  it("fixture 8: throttle-429 surfaces rate limit error", async () => {
+    const { app } = makeFixtureApp("throttle-429");
+    const res = await app.fetch(
+      anthropicRequest({
+        model: "claude-sonnet",
+        messages: [{ role: "user", content: "trigger throttle" }],
+      }),
+    );
+    expect(res.status).toBe(429);
+  });
+
+  it("fixture 9: expired-auth surfaces authentication error", async () => {
+    const { app } = makeFixtureApp("expired-auth");
+    const res = await app.fetch(
+      anthropicRequest({
+        model: "claude-sonnet",
+        messages: [{ role: "user", content: "hello auth" }],
+      }),
+    );
+    expect(res.status).toBe(401);
+  });
+
+  it("fixture 10: conversation-expired returns error", async () => {
+    const { app } = makeFixtureApp("conversation-expired");
+    const res = await app.fetch(
+      anthropicRequest({
+        model: "claude-sonnet",
+        messages: [{ role: "user", content: "hello expired" }],
+      }),
+    );
+    expect(res.status).toBeGreaterThanOrEqual(400);
+  });
+
+  it("fixture 11: image-response delivers generated image markdown", async () => {
+    const { app } = makeFixtureApp("image-response");
+    const res = await app.fetch(
+      anthropicRequest({
+        model: "claude-sonnet",
+        messages: [{ role: "user", content: "draw me a sunset" }],
+      }),
+    );
+    expect(res.status).toBe(200);
+    const body = await res.json();
+    expect(body.content[0].text).toContain("![generated image]");
+  });
+
+  it("fixture 12: unknown-frame safely processes unknown frame type without crashing", async () => {
+    const { app } = makeFixtureApp("unknown-frame");
+    const res = await app.fetch(
+      anthropicRequest({
+        model: "claude-sonnet",
+        messages: [{ role: "user", content: "future frame test" }],
+      }),
+    );
+    expect(res.status).toBe(200);
+    const body = await res.json();
+    expect(body.role).toBe("assistant");
+  });
+});
+

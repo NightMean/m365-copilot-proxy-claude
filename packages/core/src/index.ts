@@ -27,6 +27,20 @@ export {
 } from "./image.js";
 
 export {
+  UPLOAD_FILE_URL,
+  UPLOAD_VARIANTS,
+  UPLOAD_OPTIONS_SETS,
+  IMAGE_FRAME_OPTIONS_SETS,
+  SUPPORTED_IMAGE_TYPES,
+  MAX_IMAGE_SIZE_BYTES,
+  validateInputImage,
+  extractAnthropicImages,
+  uploadImageToSubstrate,
+  type InputImage,
+  type UploadedImageAnnotation,
+} from "./vision.js";
+
+export {
   noteRequestOutcome,
   awaitDegradationBackoff,
   isDegradationBackoff,
@@ -38,9 +52,33 @@ export {
 export {
   M365ProxyError,
   UnsupportedModelError,
+  AuthenticationRequiredError,
+  AuthenticationExpiredError,
+  ConditionalAccessRejectedError,
+  ModelUnavailableError,
+  ModelCapabilityUnsupportedError,
+  M365DisengagedError,
+  M365ThrottledError,
+  ConversationExpiredError,
+  InvalidToolCallError,
+  ToolSchemaTooLargeError,
+  UpstreamProtocolChangedError,
+  UpstreamTimeoutError,
   redactSensitive,
+  toAnthropicError,
   type ProxyErrorCode,
+  type AnthropicErrorType,
 } from "./errors.js";
+
+export {
+  CANONICAL_REGISTRY,
+  getModelDefinition,
+  resolveModelStrict,
+  listAllModels,
+  formatModelCapabilityTable,
+  type ModelDefinition,
+  type ResolveModelOptions,
+} from "./model-registry.js";
 
 export { getOrCreateAgent, getOrCreateAgentSingleFlight } from "./agent.js";
 
@@ -88,6 +126,7 @@ export {
 export {
   FakeTransport,
   type FakeTransportOptions,
+  type FakeProtocolFixture,
 } from "./fake.js";
 
 export {
@@ -107,6 +146,7 @@ export {
   parseToolCalls,
   looksLikeConfabulation,
   looksLikeHallucinatedCompletion,
+  looksLikeRemoteArtifactCompletion,
   isProseDocument,
   type Message,
   type ToolDef,
@@ -123,4 +163,19 @@ export {
   deriveFencedSpec,
   parseFencedToolCalls,
   FRAMING_VARIANT_NAMES,
+  hostPlatformNote,
+  findShellTool,
 } from "./fenced.js";
+
+export {
+  sanitizeHeaders,
+  compareProtocol,
+  formatCalibrationMarkdown,
+  BASELINE_PROTOCOL,
+  type ObservedProtocolRequest,
+  type SanitizedRequestCapture,
+  type ProtocolDiffItem,
+  type CalibrationReport,
+  type DiffStatus,
+  type DiffSeverity,
+} from "./calibrate.js";

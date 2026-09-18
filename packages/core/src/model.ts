@@ -4,6 +4,7 @@ import { CopilotSession } from "./session.js";
 import { createLogger, trunc } from "./log.js";
 import { resolveModel } from "./copilot.js";
 import type { CopilotStream } from "./copilot.js";
+import type { UploadedImageAnnotation } from "./vision.js";
 
 const log = createLogger("model");
 
@@ -27,6 +28,10 @@ export interface ModelSessionOptions {
   useAgent?: boolean;
   /** Inject a transport (the thing that actually talks to a backend). Defaults to the real M365 WebSocket transport. */
   transport?: ModelTransport;
+  /** Grounding scope: "web" (default) or "work" (corporate grounding). */
+  grounding?: "web" | "work";
+  /** Temporary private chat: disable server-side memory persistence. Default: true (disableMemory=1). */
+  disableMemory?: boolean;
 }
 
 /**
@@ -44,6 +49,7 @@ export interface ModelTransport {
     sessionId: string;
     conversationId: string;
     generateImages: boolean;
+    imageAnnotations?: UploadedImageAnnotation[];
   }): Promise<CopilotStream>;
   /** Drop any cached underlying connection (called on turn errors before the one retry). */
   reset?(): void;
@@ -54,9 +60,22 @@ export class RealM365Transport implements ModelTransport {
   private copilotSession: CopilotSession | null = null;
   private agentId: string | undefined = undefined;
 
+  constructor(
+    private sessionOptions?: {
+      grounding?: "web" | "work";
+      disableMemory?: boolean;
+    },
+  ) {}
+
   private ensure(agentId: string | undefined, sessionId: string, conversationId: string): CopilotSession {
     if (!this.copilotSession || this.agentId !== agentId) {
-      this.copilotSession = new CopilotSession({ agentId, sessionId, conversationId });
+      this.copilotSession = new CopilotSession({
+        agentId,
+        sessionId,
+        conversationId,
+        grounding: this.sessionOptions?.grounding,
+        disableMemory: this.sessionOptions?.disableMemory,
+      });
       this.agentId = agentId;
     }
     return this.copilotSession;
@@ -71,12 +90,17 @@ export class RealM365Transport implements ModelTransport {
     sessionId: string;
     conversationId: string;
     generateImages: boolean;
+    imageAnnotations?: UploadedImageAnnotation[];
   }): Promise<CopilotStream> {
     const sess = this.ensure(args.agentId, args.sessionId, args.conversationId);
     // Pass the resolved tone explicitly — the positional `model` param would
     // otherwise re-resolve the TONE string through getToneForModel and collapse
     // every non-default Claude tone to Claude_Sonnet.
-    return sess.chat(args.token, args.text, args.tone, args.signal, { generateImages: args.generateImages, tone: args.tone });
+    return sess.chat(args.token, args.text, args.tone, args.signal, {
+      generateImages: args.generateImages,
+      tone: args.tone,
+      imageAnnotations: args.imageAnnotations,
+    });
   }
 
   reset(): void {
@@ -125,7 +149,12 @@ export class ModelSession {
     this.resolveToken = options.getToken ?? getToken;
     this.refreshTokenFn = options.refreshToken ?? null;
     this.useAgent = options.useAgent !== false;
-    this.transport = options.transport ?? new RealM365Transport();
+    this.transport =
+      options.transport ??
+      new RealM365Transport({
+        grounding: options.grounding,
+        disableMemory: options.disableMemory,
+      });
     this._conversationId = options.conversationId ?? crypto.randomUUID();
   }
 
@@ -164,7 +193,13 @@ export class ModelSession {
    * agent (`threadLevelGptId`). `useAgent` is ONLY enabled if the resolved model
    * explicitly supports agent attachment (`config.supportsAgent`).
    */
-  async run(text: string, model: string = "m365-copilot", signal?: AbortSignal, useAgent: boolean = true): Promise<CopilotStream> {
+  async run(
+    text: string,
+    model: string = "m365-copilot",
+    signal?: AbortSignal,
+    useAgent: boolean = true,
+    imageAnnotations?: UploadedImageAnnotation[],
+  ): Promise<CopilotStream> {
     let token = await this.resolveToken();
     // Proactive refresh (restart-durability companion): MSAL access tokens live
     // ~1h; a long-lived host otherwise spends the last minutes of every hour
@@ -218,6 +253,7 @@ export class ModelSession {
         sessionId: this.sessionId,
         conversationId: this.conversationId,
         generateImages,
+        imageAnnotations,
       });
       this.currentAgentId = agentForTurn;
       this.turnCounter += 1;
@@ -235,6 +271,7 @@ export class ModelSession {
         sessionId: this.sessionId,
         conversationId: this.conversationId,
         generateImages,
+        imageAnnotations,
       });
       this.currentAgentId = agentForTurn;
       this.turnCounter += 1;

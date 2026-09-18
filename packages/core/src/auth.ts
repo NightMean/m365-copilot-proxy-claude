@@ -206,15 +206,16 @@ async function runInteractiveBrowserLogin(
   try {
     log.info(`Waiting for interactive Microsoft login for [${scopes.join(", ")}]`);
     await page.goto(authUrl, { waitUntil: "domcontentloaded" });
+    let timer: ReturnType<typeof setTimeout> | undefined;
     const code = await Promise.race([
       codePromise,
-      new Promise<string>((_, reject) =>
-        setTimeout(
+      new Promise<string>((_, reject) => {
+        timer = setTimeout(
           () => reject(new Error("Timed out waiting for interactive Microsoft login")),
           INTERACTIVE_LOGIN_TIMEOUT_MS,
-        ),
-      ),
-    ]);
+        );
+      }),
+    ]).finally(() => clearTimeout(timer));
     return await exchangeAuthCode(app, scopes, code, verifier);
   } catch (err: any) {
     log.error(`Interactive browser login failed: ${err.message}`);
@@ -469,12 +470,13 @@ async function runBrowserLogin(
         log.info(`driveAzureLogin ended early: ${e?.message}`),
       );
 
+      let timer: ReturnType<typeof setTimeout> | undefined;
       const authCode = await Promise.race([
         codePromise,
-        new Promise<string>((_, rej) =>
-          setTimeout(() => rej(new Error("Timed out waiting for auth code")), 45000),
-        ),
-      ]);
+        new Promise<string>((_, rej) => {
+          timer = setTimeout(() => rej(new Error("Timed out waiting for auth code")), 45000);
+        }),
+      ]).finally(() => clearTimeout(timer));
       void drive; // fire-and-forget; context.close() below tears down any pending step
 
       return await exchangeAuthCode(app, scopes, authCode, verifier);

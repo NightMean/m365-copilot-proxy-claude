@@ -105,3 +105,62 @@ describe("SessionPool hydration (restart resumes the M365 thread)", () => {
     expect(state.sentMessageCount).toBe(0);
   });
 });
+
+describe("SessionStore TTL & LRU eviction", () => {
+  it("prunes expired sessions past TTL in JSON backend", () => {
+    const file = tmpFile("ttl.json");
+    const store = new SessionStore({ filePath: file, backend: "json", ttlMs: 1000 });
+    store.set("active", { conversationId: "cid-1", sentMessageCount: 1, lastUsedAt: Date.now() });
+    store.set("expired", { conversationId: "cid-2", sentMessageCount: 1, lastUsedAt: Date.now() - 2000 });
+    store.flush();
+
+    expect(store.get("active")).not.toBeNull();
+    expect(store.get("expired")).toBeNull();
+  });
+
+  it("evicts oldest sessions when maxSessions capacity is exceeded (LRU) in JSON backend", () => {
+    const file = tmpFile("lru.json");
+    const store = new SessionStore({ filePath: file, backend: "json", maxSessions: 2 });
+    const now = Date.now();
+    store.set("oldest", { conversationId: "cid-1", sentMessageCount: 1, lastUsedAt: now - 3000 });
+    store.set("middle", { conversationId: "cid-2", sentMessageCount: 1, lastUsedAt: now - 2000 });
+    store.set("newest", { conversationId: "cid-3", sentMessageCount: 1, lastUsedAt: now - 1000 });
+    store.flush();
+
+    expect(store.get("oldest")).toBeNull();
+    expect(store.get("middle")).not.toBeNull();
+    expect(store.get("newest")).not.toBeNull();
+  });
+});
+
+describe("SessionStore SQLite backend", () => {
+  it("round-trips records through SQLite database", () => {
+    const file = tmpFile("sessions.sqlite");
+    const a = new SessionStore({ filePath: file, backend: "sqlite" });
+    a.set("sq-1", RECORD);
+    a.flush();
+    a.close();
+
+    const b = new SessionStore({ filePath: file, backend: "sqlite" });
+    expect(b.get("sq-1")).toEqual(RECORD);
+    b.close();
+  });
+
+  it("prunes expired records and enforces LRU capacity in SQLite", () => {
+    const file = tmpFile("lru.sqlite");
+    const store = new SessionStore({ filePath: file, backend: "sqlite", ttlMs: 2000, maxSessions: 2 });
+    store.set("s-old", { conversationId: "cid-old", sentMessageCount: 1, lastUsedAt: Date.now() - 3000 });
+    store.set("s-1", { conversationId: "cid-1", sentMessageCount: 1, lastUsedAt: Date.now() - 500 });
+    store.set("s-2", { conversationId: "cid-2", sentMessageCount: 1, lastUsedAt: Date.now() - 200 });
+
+    // s-old is past TTL
+    expect(store.get("s-old")).toBeNull();
+
+    // Adding s-3 exceeds maxSessions (2), so oldest active s-1 gets evicted
+    store.set("s-3", { conversationId: "cid-3", sentMessageCount: 1, lastUsedAt: Date.now() });
+    expect(store.get("s-1")).toBeNull();
+    expect(store.get("s-2")).not.toBeNull();
+    expect(store.get("s-3")).not.toBeNull();
+    store.close();
+  });
+});

@@ -147,4 +147,25 @@ describe("image blocks and parallel-tool-use signal", () => {
       messages: [{ role: "user", content: "x" }],
     }))).toBe(false);
   });
+
+  it("extracts input images from Anthropic message bodies", async () => {
+    const { extractImagesFromAnthropicBody } = await import("./anthropic.js");
+    const body = AnthropicMessagesRequest.parse({
+      model: "claude-sonnet",
+      max_tokens: 100,
+      messages: [
+        {
+          role: "user",
+          content: [
+            { type: "text", text: "inspect this diagram" },
+            { type: "image", source: { type: "base64", media_type: "image/png", data: "iVBORw0KGgo=" } },
+          ],
+        },
+      ],
+    });
+    const images = extractImagesFromAnthropicBody(body);
+    expect(images).toHaveLength(1);
+    expect(images[0].mediaType).toBe("image/png");
+    expect(images[0].base64Data).toBe("iVBORw0KGgo=");
+  });
 });

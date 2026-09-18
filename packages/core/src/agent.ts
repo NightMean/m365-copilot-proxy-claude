@@ -85,39 +85,30 @@ async function getEnvironmentUrl(ppToken: string): Promise<string> {
   const normalizedName = envName.replace(/-/g, "").toLowerCase();
   const envId = normalizedName.replace(/^default/i, "");
 
-  // Current environment API hosts split the normalized environment name before
-  // its final two characters:
-  //   Default-...-ac08 -> default...ac.08.environment.api.powerplatform.com
-  // Keep the older `.df` guesses as fallbacks for tenants that still expose
-  // legacy hostnames. The BAP response's PowerVirtualAgents runtime endpoint is
-  // a regional gateway and does not serve the Copilot Studio minimalBots route.
-  const candidates = [
-    `https://${normalizedName.slice(0, -2)}.${normalizedName.slice(-2)}.environment.api.powerplatform.com`,
-    `https://default${envId}.df.environment.api.powerplatform.com`,
-    `https://default${envId.slice(0, -2)}.df.environment.api.powerplatform.com`,
-  ];
-
-  for (const url of candidates) {
-    try {
-      const probe = await fetch(
-        `${url}/copilotstudio/minimalBots/api?api-version=2022-03-01-preview`,
-        {
-          method: "HEAD",
-          headers: { Authorization: `Bearer ${ppToken}` },
-        },
-      );
-      // Any response (even 401/403) means the host resolved
-      log.info(`Resolved environment URL: ${url}`);
-      return url;
-    } catch {
-      log.info(`Environment URL candidate failed: ${url}`);
-    }
+  // Power Platform splits the environment ID across TWO DNS labels: everything but
+  // the last two characters, then those two characters as a label of their own.
+  if (envId.length < 3) {
+    throw new Error(`Unexpected Power Platform environment ID: ${envId}`);
   }
+  const url =
+    `https://default${envId.slice(0, -2)}.${envId.slice(-2)}` +
+    `.environment.api.powerplatform.com`;
 
-  // Last resort: return the full version
-  const fallback = candidates[0];
-  log.info(`Using fallback environment URL: ${fallback}`);
-  return fallback;
+  try {
+    // Any response at all (401/403 included) proves the host resolved; we only
+    // care about DNS here, not authorization.
+    await fetch(`${url}/copilotstudio/minimalBots/api?api-version=2022-03-01-preview`, {
+      method: "HEAD",
+      headers: { Authorization: `Bearer ${ppToken}` },
+    });
+    log.info(`Resolved environment URL: ${url}`);
+  } catch {
+    // Not fatal: the derivation is the documented convention, so a failed probe
+    // is more likely a transient network blip than a wrong name. Surface it and
+    // let the real call produce the actionable error.
+    log.info(`Environment URL did not resolve on probe, using anyway: ${url}`);
+  }
+  return url;
 }
 
 interface CachedAgent {

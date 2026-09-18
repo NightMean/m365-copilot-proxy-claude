@@ -19,6 +19,8 @@ import {
   fetchImageBytes,
   resolveSystemPromptSpec,
   type CapturedImage,
+  type UploadedImageAnnotation,
+  M365ProxyError,
 } from "@m365-copilot/core";
 import { ChatCompletionRequest } from "./schemas.js";
 import { TurnGate } from "./gate.js";
@@ -504,6 +506,8 @@ export interface ProduceOptions {
    * forces strict one-tool-per-turn for THIS request regardless of profile/env.
    */
   forceSingleToolUse?: boolean;
+  /** Uploaded image annotations for image vision input. */
+  imageAnnotations?: UploadedImageAnnotation[];
 }
 
 function withSystemMessage(body: ChatBody, text: string): ChatBody {
@@ -807,10 +811,12 @@ let lastThinking: string | null = null;
         // one M365 turn at a time account-wide; disable M365_NO_TURN_QUEUE=1).
         copilotStream = await enqueueTurn(() =>
           pool.turnGate.run(convFingerprint, () =>
-            session.run(text, model, cb.signal, useToolAgent)));
+            session.run(text, model, cb.signal, useToolAgent, cb.imageAnnotations)));
       } catch (err: any) {
         log.error("Upstream turn failed:", err?.stack ?? err);
-        return { error: jsonResponse(502, { error: { message: err.message, type: "upstream_error" } }) };
+        const status = err instanceof M365ProxyError ? err.status : 502;
+        const code = err instanceof M365ProxyError ? err.code : "UPSTREAM_ERROR";
+        return { error: jsonResponse(status, { error: { message: err.message, type: code.toLowerCase(), code } }) };
       }
 
       let fullText = "";
@@ -826,7 +832,9 @@ let lastThinking: string | null = null;
           fullText = copilotStream.fullText;
         }
       } catch (err: any) {
-        return { error: jsonResponse(502, { error: { message: err.message, type: "upstream_error" } }) };
+        const status = err instanceof M365ProxyError ? err.status : 502;
+        const code = err instanceof M365ProxyError ? err.code : "UPSTREAM_ERROR";
+        return { error: jsonResponse(status, { error: { message: err.message, type: code.toLowerCase(), code } }) };
       }
 
       const totalTime = Math.round(performance.now() - startTime);
@@ -1435,7 +1443,9 @@ export async function handleChatCompletion(
     result = await produceCompletion(body, pool, { signal: opts.signal, systemPromptSpec: opts.systemPromptSpec, sessionKey: opts.sessionKey, profile: opts.profile });
   } catch (err: any) {
     console.error("[produce error non-stream]", err.stack || err);
-    return jsonResponse(502, { error: { message: err?.message ?? "upstream error", type: "upstream_error" } });
+    const status = err instanceof M365ProxyError ? err.status : 502;
+    const code = err instanceof M365ProxyError ? err.code : "UPSTREAM_ERROR";
+    return jsonResponse(status, { error: { message: err?.message ?? "upstream error", type: code.toLowerCase(), code } });
   }
   const p = result.produced;
 

@@ -17,6 +17,7 @@ import {
   shouldAutoConfirm,
   ACTION_ALLOWED_MESSAGE_TYPES,
 } from "./native-actions.js";
+import { IMAGE_FRAME_OPTIONS_SETS, type UploadedImageAnnotation } from "./vision.js";
 import { createLogger, trunc } from "./log.js";
 
 const RS = "\x1E";
@@ -179,6 +180,8 @@ export interface ChatTurnOptions {
   /** Explicit tone for this turn. Takes precedence over getToneForModel(model)
    *  so callers that already resolved a model never get re-mangled. */
   tone?: string;
+  /** Uploaded image annotations carrying server-assigned docIds for image vision input. */
+  imageAnnotations?: UploadedImageAnnotation[];
 }
 
 export interface CopilotSessionOptions {
@@ -189,6 +192,10 @@ export interface CopilotSessionOptions {
   conversationId?: string;
   /** Enable native custom-action support (H-NATIVE-6/7). Off = unchanged behaviour. */
   nativeActions?: NativeActionConfig;
+  /** Grounding scope: "web" (default, isolated from corporate docs) or "work" (corporate grounding). */
+  grounding?: "web" | "work";
+  /** Temporary private chat: disable server-side memory persistence. Default: true (disableMemory=1). */
+  disableMemory?: boolean;
 }
 
 /**
@@ -202,6 +209,8 @@ export class CopilotSession {
   private _turnCount = 0;
   private agentId?: string;
   private nativeActions?: NativeActionConfig;
+  private grounding: "web" | "work";
+  private disableMemory: boolean;
   // Warm-socket prefetch (latency): a pre-opened, handshake-completed WebSocket
   // for THIS conversation, parked right after the previous turn ends so the next
   // turn skips the ~0.3–3s TLS+upgrade connect. Server closes post-turn sockets
@@ -215,7 +224,11 @@ export class CopilotSession {
     this.conversationId = options?.conversationId ?? crypto.randomUUID();
     this.agentId = options?.agentId;
     this.nativeActions = options?.nativeActions;
-    log.info(`New session: sid=${this.sessionId}, cid=${this.conversationId}, agent=${this.agentId ?? "none"}, nativeActions=${!!this.nativeActions}`);
+    this.grounding = options?.grounding ?? (process.env.M365_GROUNDING === "work" ? "work" : "web");
+    this.disableMemory = options?.disableMemory ?? (process.env.M365_DISABLE_MEMORY !== "0");
+    log.info(
+      `New session: sid=${this.sessionId}, cid=${this.conversationId}, agent=${this.agentId ?? "none"}, grounding=${this.grounding}, disableMemory=${this.disableMemory}, nativeActions=${!!this.nativeActions}`,
+    );
   }
 
   /** Number of turns completed in this session */
@@ -252,8 +265,9 @@ export class CopilotSession {
       product: "Office",
       agentHost: "Bizchat.FullScreen",
       licenseType: "Starter",
-      agent: "web",
+      agent: this.grounding,
       scenario: "OfficeWebIncludedCopilot",
+      ...(this.disableMemory ? { disableMemory: "1" } : {}),
     });
     const wsUrl = `wss://substrate.office.com/m365Copilot/Chathub/${claims.oid}@${claims.tid}?${params}`;
     const t0 = performance.now();
@@ -355,8 +369,9 @@ export class CopilotSession {
       product: "Office",
       agentHost: "Bizchat.FullScreen",
       licenseType: "Starter",
-      agent: "web",
+      agent: this.grounding,
       scenario: "OfficeWebIncludedCopilot",
+      ...(this.disableMemory ? { disableMemory: "1" } : {}),
     });
 
     const wsUrl = `wss://substrate.office.com/m365Copilot/Chathub/${claims.oid}@${claims.tid}?${params}`;
@@ -670,6 +685,7 @@ export class CopilotSession {
       });
 
       const sendChat = () => {
+        const hasImageAnnotations = Boolean(opts?.imageAnnotations && opts.imageAnnotations.length > 0);
         const args = {
               source: "officeweb",
               clientCorrelationId: requestId,
@@ -682,6 +698,7 @@ export class CopilotSession {
               optionsSets: [
                 ...((!agentId && !process.env.M365_NO_CODE_INTERPRETER) ? CODE_INTERPRETER_OPTIONS_SETS : []),
                 ...(wantImages ? IMAGE_GEN_OPTIONS_SETS : []),
+                ...(hasImageAnnotations ? IMAGE_FRAME_OPTIONS_SETS : []),
                 ...(process.env.M365_EXTRA_OPTIONSSETS ? process.env.M365_EXTRA_OPTIONSSETS.split(",").map((s) => s.trim()).filter(Boolean) : []),
               ],
               streamingMode: "ConciseWithPadding",
@@ -708,6 +725,7 @@ export class CopilotSession {
                 // frame if the client declares it can handle it — same
                 // declare-to-receive rule as native actions.
                 ...(wantImages ? ["GenerateGraphicArt"] : []),
+                ...(hasImageAnnotations ? ["ImageFile"] : []),
                 // Native custom-action vocabulary (H-NATIVE-6): the server only
                 // SENDS these trigger frames if the client says it can handle them.
                 ...(nativeActions ? ACTION_ALLOWED_MESSAGE_TYPES : []),
@@ -737,7 +755,9 @@ export class CopilotSession {
                   "Event",
                   "Email",
                   "TeamsMessage",
+                  ...(hasImageAnnotations ? ["ImageFile"] : []),
                 ],
+                ...(hasImageAnnotations ? { messageAnnotations: opts!.imageAnnotations } : {}),
                 requestId,
                 locationInfo: { timeZoneOffset: 1, timeZone: "Europe/Copenhagen" },
                 locale: "en-gb",

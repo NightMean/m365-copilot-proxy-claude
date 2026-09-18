@@ -6,6 +6,7 @@ import {
   buildSpecMap,
   formatFencedToolDefinitions,
   findShellTool,
+  hostPlatformNote,
 } from "./fenced.js";
 import type { ToolDef } from "./tools.js";
 
@@ -224,6 +225,22 @@ describe("shell routing (Tier 1)", () => {
     const specs = buildSpecMap([runCommand]);
     expect(parseFencedToolCalls("```sh\nls\n```", specs).calls[0]?.function.name).toBe("run_command");
     expect(parseFencedToolCalls("```shell\nls\n```", specs).calls[0]?.function.name).toBe("run_command");
+  });
+
+  it("routes Windows shell fences (powershell, pwsh, cmd, bat)", () => {
+    const specs = buildSpecMap([runCommand]);
+    expect(parseFencedToolCalls("```powershell\nGet-ChildItem\n```", specs).calls[0]?.function.name).toBe("run_command");
+    expect(parseFencedToolCalls("```pwsh\nGet-Location\n```", specs).calls[0]?.function.name).toBe("run_command");
+    expect(parseFencedToolCalls("```cmd\ndir\n```", specs).calls[0]?.function.name).toBe("run_command");
+    expect(parseFencedToolCalls("```bat\necho hello\n```", specs).calls[0]?.function.name).toBe("run_command");
+  });
+
+  it("injects hostPlatformNote only on Windows with a shell tool", () => {
+    expect(hostPlatformNote(bash, "win32")).toContain("HOST PLATFORM: Windows");
+    expect(hostPlatformNote(bash, "win32")).toContain("Get-Content");
+    expect(hostPlatformNote(bash, "linux")).toBe("");
+    expect(hostPlatformNote(bash, "darwin")).toBe("");
+    expect(hostPlatformNote(undefined, "win32")).toBe("");
   });
 
   it("routes leaked container.* runtime aliases to the harness shell tool", () => {
