@@ -21,13 +21,12 @@ interactive Microsoft login when needed. `claude-m365.ps1` validates the model,
 creates an isolated proxy session, and launches the existing Claude executable
 without changing global credentials or disabling permissions.
 
-From the repository:
+From the repository (or via global command):
 
 ```sh
-./install.sh
-./login.sh
-./start-proxy.sh
-./connect-claude.sh
+m365-copilot login
+m365-copilot start
+m365-copilot connect-claude
 ```
 
 Then, from the project Claude Code may access:
