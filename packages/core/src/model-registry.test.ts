@@ -5,6 +5,8 @@ import {
   listAllModels,
   formatModelCapabilityTable,
   CANONICAL_REGISTRY,
+  setCustomAliases,
+  clearCustomAliasesCache,
 } from "./model-registry.js";
 import { ModelUnavailableError, ModelCapabilityUnsupportedError } from "./errors.js";
 
@@ -36,15 +38,27 @@ describe("Model Registry", () => {
     expect(resolveModelStrict("opus-5").m365Tone).toBe("Claude_Opus");
     expect(resolveModelStrict("claude-3-opus").m365Tone).toBe("Claude_Opus");
     expect(resolveModelStrict("claude-opus-4.8").m365Tone).toBe("Claude_Opus");
-
-    // Enterprise policy spoof: opus-4.6 explicitly aliases GPT-5.5 Reasoning
-    expect(resolveModelStrict("claude-opus-4.6").m365Tone).toBe("Gpt_5_5_Reasoning");
-    expect(resolveModelStrict("opus-4.6").m365Tone).toBe("Gpt_5_5_Reasoning");
-    expect(resolveModelStrict("eu.anthropic.claude-opus-4.6").m365Tone).toBe("Gpt_5_5_Reasoning");
+    expect(resolveModelStrict("claude-opus-4.6").m365Tone).toBe("Claude_Opus");
+    expect(resolveModelStrict("opus-4.6").m365Tone).toBe("Claude_Opus");
+    expect(resolveModelStrict("eu.anthropic.claude-opus-4.6").m365Tone).toBe("Claude_Opus");
 
     // Enterprise Sonnet aliases resolve to Claude_Sonnet
     expect(resolveModelStrict("claude-sonnet-4.6").m365Tone).toBe("Claude_Sonnet");
     expect(resolveModelStrict("eu.anthropic.claude-sonnet-5").m365Tone).toBe("Claude_Sonnet");
+  });
+
+  it("supports dynamic custom aliases configured by user", () => {
+    try {
+      setCustomAliases({
+        "enterprise-spoof-model": "gpt-5.5-think-deeper",
+        "claude-opus-4.6": "gpt-5.5-think-deeper",
+      });
+      expect(resolveModelStrict("enterprise-spoof-model").m365Tone).toBe("Gpt_5_5_Reasoning");
+      expect(resolveModelStrict("claude-opus-4.6").m365Tone).toBe("Gpt_5_5_Reasoning");
+    } finally {
+      setCustomAliases(null);
+      clearCustomAliasesCache();
+    }
   });
 
   it("is case-insensitive and trims whitespace", () => {

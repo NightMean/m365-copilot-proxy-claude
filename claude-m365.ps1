@@ -1,6 +1,6 @@
 [CmdletBinding()]
 param(
-    [string]$Model = $(if ($env:M365_DEFAULT_MODEL) { $env:M365_DEFAULT_MODEL } else { "claude-opus-4.6" }),
+    [string]$Model = $(if ($env:M365_DEFAULT_MODEL) { $env:M365_DEFAULT_MODEL } else { "gpt-5.5-think-deeper" }),
     [ValidatePattern('^[A-Za-z0-9._:-]{1,128}$')]
     [string]$SessionId,
     [switch]$NewSession,

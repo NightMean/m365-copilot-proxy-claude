@@ -1,5 +1,6 @@
 import { JwtClaims } from "./schemas.js";
 import { UnsupportedModelError } from "./errors.js";
+import { loadCustomAliases } from "./model-registry.js";
 
 export type BackendFamily = "auto" | "gpt" | "claude";
 export type ToolMode = "agent" | "fenced" | "none";
@@ -214,10 +215,11 @@ export const MODEL_ALIASES: Record<string, string> = {
 
   "claude-opus-4": "claude-opus",
   "claude-opus-4-5": "claude-opus",
-  "claude-opus-4-6": "gpt-5.5-think-deeper",
-  "claude-opus-4.6": "gpt-5.5-think-deeper",
-  "opus-4-6": "gpt-5.5-think-deeper",
-  "opus-4.6": "gpt-5.5-think-deeper",
+  "claude-opus-4.5": "claude-opus",
+  "claude-opus-4-6": "claude-opus",
+  "claude-opus-4.6": "claude-opus",
+  "opus-4-6": "claude-opus",
+  "opus-4.6": "claude-opus",
   "claude-opus-4-7": "claude-opus",
   "claude-opus-4.7": "claude-opus",
   "claude-opus-4-8": "claude-opus",
@@ -235,9 +237,9 @@ export const MODEL_ALIASES: Record<string, string> = {
   // Regional Anthropic Opus aliases allowed by corporate / Bedrock policies
   "eu.anthropic.claude-opus-4-8": "claude-opus",
   "eu.anthropic.claude-opus-4-7": "claude-opus",
+  "eu.anthropic.claude-opus-4-6": "claude-opus",
+  "eu.anthropic.claude-opus-4.6": "claude-opus",
   "eu.anthropic.claude-opus-5": "claude-opus",
-  "eu.anthropic.claude-opus-4-6": "gpt-5.5-think-deeper",
-  "eu.anthropic.claude-opus-4.6": "gpt-5.5-think-deeper",
   "us.anthropic.claude-opus-4-8": "claude-opus",
   "us.anthropic.claude-opus-5": "claude-opus",
 
@@ -292,6 +294,34 @@ export function resolveModel(value: string): ResolvedModel {
       getAvailableModels(),
       `Unsupported model "${value}". This alias does not select a distinct upstream model. Use "gpt-5.5" or "auto".`,
     );
+  }
+
+  // 0. Dynamic custom aliases (configured via model-aliases.json or M365_MODEL_ALIASES)
+  const customAliases = loadCustomAliases();
+  if (customAliases[normalized]) {
+    const customTarget = customAliases[normalized];
+    const targetNormalized = normalizeModelName(customTarget);
+    if (CANONICAL_MODELS[targetNormalized]) {
+      const config = CANONICAL_MODELS[targetNormalized];
+      return {
+        requestedModel: value,
+        normalizedModel: normalized,
+        canonicalModel: config.canonicalModel,
+        config,
+        warnings: [`"${value}" is a custom configured alias resolving to canonical model "${config.canonicalModel}".`],
+      };
+    }
+    const targetCanonical = MODEL_ALIASES[targetNormalized];
+    if (targetCanonical && CANONICAL_MODELS[targetCanonical]) {
+      const config = CANONICAL_MODELS[targetCanonical];
+      return {
+        requestedModel: value,
+        normalizedModel: normalized,
+        canonicalModel: config.canonicalModel,
+        config,
+        warnings: [`"${value}" is a custom configured alias resolving to canonical model "${config.canonicalModel}".`],
+      };
+    }
   }
 
   // 1. Direct match in canonical models
@@ -352,7 +382,8 @@ export function getToneForModel(model: string): string {
 export function getAvailableModels(): string[] {
   const canonical = Object.keys(CANONICAL_MODELS);
   const aliases = Object.keys(MODEL_ALIASES);
-  return Array.from(new Set([...canonical, ...aliases]));
+  const custom = Object.keys(loadCustomAliases());
+  return Array.from(new Set([...canonical, ...aliases, ...custom]));
 }
 
 export function decodeJwt(token: string) {

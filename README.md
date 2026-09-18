@@ -96,6 +96,40 @@ escape hatches remain available for advanced use. Logs are under
 `%USERPROFILE%\.local\state\m365-copilot-proxy`; health is
 `http://127.0.0.1:4141/health`.
 
+### Model selection and dynamic enterprise aliasing
+
+The gateway exposes a centralized, strictly truthful model catalog:
+- `gpt-5.5-think-deeper` / `gpt-5.5`: M365 GPT-5.5 Reasoning (`Gpt_5_5_Reasoning`).
+- `gpt-5.6-think-deeper` / `gpt-5.6`: Frontier M365 GPT-5.6 Reasoning (`Gpt_5_6_Reasoning`).
+- `claude-opus` / `claude-opus-5`: Microsoft 365 Copilot Opus tone (`Claude_Opus`).
+- `claude-sonnet`: Microsoft 365 Copilot Sonnet tone (`Claude_Sonnet`).
+
+**Strict Model Truthfulness:** Built-in models never silently demote or redirect to an unrequested family (e.g. requesting `claude-opus` will never silently become GPT).
+
+#### Enterprise Policy Spoofing & Custom Aliases
+If your corporate network or Claude Code configuration enforces specific allowed Anthropic model names (e.g. `claude-opus-4.6`, `eu.anthropic.*`), you can configure dynamic custom aliases **without editing any code or rebuilding**:
+
+1. **Via `model-aliases.json` (Recommended):**
+   Copy `model-aliases.example.json` to `%USERPROFILE%\.config\m365-copilot-proxy\model-aliases.json`:
+   ```json
+   {
+     "claude-opus-4.6": "gpt-5.5-think-deeper",
+     "eu.anthropic.claude-opus-4.6": "gpt-5.5-think-deeper",
+     "my-custom-model": "gpt-5.6-think-deeper"
+   }
+   ```
+2. **Via `proxy.env` / Environment Variable:**
+   In your `proxy.env` (or shell):
+   ```ini
+   M365_MODEL_ALIASES='{"claude-opus-4.6":"gpt-5.5-think-deeper"}'
+   ```
+   Or set a custom file path:
+   ```ini
+   M365_MODEL_ALIASES_FILE=~/.config/m365-copilot-proxy/model-aliases.json
+   ```
+
+Custom aliases take priority over built-in names, allowing seamless compliance with organizational client-side policies while routing to your chosen M365 backend.
+
 ### Compatibility boundary
 
 - Native-equivalent interface behavior: Messages request/response shapes,

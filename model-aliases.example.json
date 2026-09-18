@@ -1,0 +1,12 @@
+{
+  "_comment": "Custom Microsoft 365 Copilot Proxy Model Aliases Configuration",
+  "_instructions": "Copy this file to ~/.config/m365-copilot-proxy/model-aliases.json (or specify via M365_MODEL_ALIASES_FILE in proxy.env)",
+  
+  "claude-opus-4.6": "gpt-5.5-think-deeper",
+  "opus-4.6": "gpt-5.5-think-deeper",
+  "eu.anthropic.claude-opus-4.6": "gpt-5.5-think-deeper",
+  "us.anthropic.claude-opus-4.6": "gpt-5.5-think-deeper",
+  
+  "my-coding-model": "gpt-5.6-think-deeper",
+  "my-fast-model": "claude-sonnet"
+}

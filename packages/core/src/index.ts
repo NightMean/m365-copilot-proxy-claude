@@ -76,6 +76,9 @@ export {
   resolveModelStrict,
   listAllModels,
   formatModelCapabilityTable,
+  loadCustomAliases,
+  setCustomAliases,
+  clearCustomAliasesCache,
   type ModelDefinition,
   type ResolveModelOptions,
 } from "./model-registry.js";

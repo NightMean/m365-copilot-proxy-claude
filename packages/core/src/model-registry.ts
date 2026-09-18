@@ -1,3 +1,6 @@
+import { existsSync, readFileSync } from "node:fs";
+import { join } from "node:path";
+import { homedir } from "node:os";
 import { ModelUnavailableError, ModelCapabilityUnsupportedError } from "./errors.js";
 
 export interface ModelDefinition {
@@ -55,13 +58,6 @@ export const CANONICAL_REGISTRY: Record<string, ModelDefinition> = {
       "openai-codex",
       "gpt-codex",
       "codex-5",
-      // Enterprise spoof aliases: mapping GPT-5.5 to Opus 4.6 to satisfy corporate model policies
-      "claude-opus-4.6",
-      "claude-opus-4-6",
-      "opus-4.6",
-      "opus-4-6",
-      "eu.anthropic.claude-opus-4.6",
-      "eu.anthropic.claude-opus-4-6",
     ],
     contextWindow: 128_000,
     maxOutputTokens: 16_384,
@@ -81,6 +77,11 @@ export const CANONICAL_REGISTRY: Record<string, ModelDefinition> = {
       "claude-opus-5",
       "claude-opus-4",
       "claude-opus-4-5",
+      "claude-opus-4.5",
+      "claude-opus-4-6",
+      "claude-opus-4.6",
+      "opus-4-6",
+      "opus-4.6",
       "opus",
       "opus-5",
       "claude-3-opus",
@@ -92,6 +93,8 @@ export const CANONICAL_REGISTRY: Record<string, ModelDefinition> = {
       "claude-opus-4.8",
       "eu.anthropic.claude-opus-4-8",
       "eu.anthropic.claude-opus-4-7",
+      "eu.anthropic.claude-opus-4-6",
+      "eu.anthropic.claude-opus-4.6",
       "eu.anthropic.claude-opus-5",
       "us.anthropic.claude-opus-4-8",
       "us.anthropic.claude-opus-5",
@@ -218,13 +221,121 @@ for (const model of Object.values(CANONICAL_REGISTRY)) {
   }
 }
 
+let _customAliasesCache: Record<string, string> | null = null;
+
+/**
+ * Load user-defined custom model aliases dynamically.
+ * Priority:
+ * 1. In-memory override via setCustomAliases(...)
+ * 2. Process environment variable M365_MODEL_ALIASES (JSON object or comma-separated pairs)
+ * 3. File explicitly defined in M365_MODEL_ALIASES_FILE
+ * 4. ~/.config/m365-copilot-proxy/model-aliases.json
+ * 5. ~/.config/opencode-m365/model-aliases.json
+ */
+export function loadCustomAliases(): Record<string, string> {
+  if (_customAliasesCache !== null) {
+    return _customAliasesCache;
+  }
+
+  const result: Record<string, string> = {};
+
+  // 1. Check custom file path if specified or standard paths
+  const candidateFiles = [
+    process.env.M365_MODEL_ALIASES_FILE,
+    join(homedir(), ".config", "m365-copilot-proxy", "model-aliases.json"),
+    join(homedir(), ".config", "opencode-m365", "model-aliases.json"),
+  ].filter(Boolean) as string[];
+
+  for (const filePath of candidateFiles) {
+    if (existsSync(filePath)) {
+      try {
+        const raw = readFileSync(filePath, "utf-8");
+        const parsed = JSON.parse(raw);
+        if (typeof parsed === "object" && parsed !== null && !Array.isArray(parsed)) {
+          for (const [k, v] of Object.entries(parsed)) {
+            if (typeof v === "string") {
+              result[k.trim().toLowerCase()] = v.trim();
+            }
+          }
+          break; // Use the first valid configuration file found
+        }
+      } catch (e) {
+        console.warn(`[model-registry] Failed to parse model aliases from ${filePath}: ${e}`);
+      }
+    }
+  }
+
+  // 2. Check M365_MODEL_ALIASES environment variable (takes precedence over file)
+  if (process.env.M365_MODEL_ALIASES) {
+    const rawEnv = process.env.M365_MODEL_ALIASES.trim();
+    if (rawEnv.startsWith("{")) {
+      try {
+        const parsed = JSON.parse(rawEnv);
+        if (typeof parsed === "object" && parsed !== null && !Array.isArray(parsed)) {
+          for (const [k, v] of Object.entries(parsed)) {
+            if (typeof v === "string") {
+              result[k.trim().toLowerCase()] = v.trim();
+            }
+          }
+        }
+      } catch (e) {
+        console.warn(`[model-registry] Failed to parse M365_MODEL_ALIASES JSON: ${e}`);
+      }
+    } else {
+      // Parse key=value,key2=value2 or key:value
+      const pairs = rawEnv.split(/[,;\n]/);
+      for (const pair of pairs) {
+        const sep = pair.includes("=") ? "=" : pair.includes(":") ? ":" : null;
+        if (sep) {
+          const [alias, target] = pair.split(sep);
+          if (alias && target) {
+            result[alias.trim().toLowerCase()] = target.trim();
+          }
+        }
+      }
+    }
+  }
+
+  _customAliasesCache = result;
+  return result;
+}
+
+/** Set custom aliases programmatically (e.g. for testing) */
+export function setCustomAliases(aliases: Record<string, string> | null): void {
+  if (aliases === null) {
+    _customAliasesCache = null;
+    return;
+  }
+  const normalized: Record<string, string> = {};
+  for (const [k, v] of Object.entries(aliases)) {
+    normalized[k.trim().toLowerCase()] = v.trim();
+  }
+  _customAliasesCache = normalized;
+}
+
+/** Reset the custom aliases cache so next call re-reads files/env */
+export function clearCustomAliasesCache(): void {
+  _customAliasesCache = null;
+}
+
 /**
  * Resolve model identifier or alias to its ModelDefinition.
+ * Checks dynamic custom aliases first, then static registry aliases.
  * Returns undefined if unknown.
  */
 export function getModelDefinition(idOrAlias: string | null | undefined): ModelDefinition | undefined {
   if (!idOrAlias) return undefined;
   const normalized = idOrAlias.trim().toLowerCase();
+
+  // 1. Check custom dynamically loaded aliases
+  const custom = loadCustomAliases();
+  if (custom[normalized]) {
+    const target = custom[normalized].trim().toLowerCase();
+    const targetDef = ALIAS_MAP.get(target);
+    if (targetDef) return targetDef;
+  }
+
+  // 2. Check canonical registry and built-in aliases
   return ALIAS_MAP.get(normalized);
 }
 
